@@ -11,15 +11,17 @@ namespace coro_uring {
 template <typename T>
 class Generator {
  public:
-  class Promise : public PromiseBase<T, Generator<T>, std::suspend_always> {
+  class Promise
+      : public internal::PromiseBase<T, Generator<T>, std::suspend_always> {
    public:
     void return_void() {
       TRACE_FUNCTION();
     }
 
-    auto yield_value(T value) {
+    template <typename Arg>
+    auto yield_value(Arg value) {
       TRACE_FUNCTION() << value;
-      this->SetValue(std::move(value));
+      this->SetValue(std::forward<Arg>(value));
       return this->GetPrecursorAwaitable();
     }
   };
@@ -40,12 +42,14 @@ class Generator {
     return handle_.done();
   }
 
-  std::optional<T> await_resume() noexcept {
+  std::optional<T>&& await_resume() noexcept {
     TRACE_FUNCTION();
     if (handle_.done()) {
-      return std::nullopt;
+      static std::optional<T> nullval;
+      nullval.reset();
+      return std::move(nullval);
     }
-    return handle_.promise().PopValue();
+    return handle_.promise().GetValue();
   }
 
   std::coroutine_handle<> await_suspend(std::coroutine_handle<> handle) {

@@ -7,10 +7,18 @@
 #include "coro_uring/coroutines_compat.h"
 #include "coro_uring/debug.h"
 
-namespace coro_uring {
+namespace coro_uring::internal {
 
-template <typename T, typename ReturnObjectT, typename InitialSuspendT>
-class PromiseBase {
+template <typename ValueT>
+struct PromiseBaseValueHolder {
+  std::optional<ValueT> value_;
+};
+
+template <>
+struct PromiseBaseValueHolder<void> {};
+
+template <typename ValueT, typename ReturnObjectT, typename InitialSuspendT>
+class PromiseBase : private PromiseBaseValueHolder<ValueT> {
  public:
   auto initial_suspend() noexcept {
     TRACE_FUNCTION();
@@ -34,13 +42,13 @@ class PromiseBase {
     throw;
   }
 
-  void SetValue(T value) {
-    value_ = std::move(value);
+  template <typename ArgT>
+  void SetValue(ArgT value) {
+    this->value_ = std::forward<ArgT>(value);
   }
 
-  std::optional<T> PopValue() {
-    std::optional<T> result = std::move(value_);
-    return result;
+  std::optional<ValueT>&& GetValue() {
+    return std::move(this->value_);
   }
 
   // Only Future can detach
@@ -73,15 +81,14 @@ class PromiseBase {
       std::coroutine_handle<> precursor;
     };
     Awaitable result{.detached = detached_, .precursor = precursor_};
-      // reset precursor, because it should be set again
+    // reset precursor, because it should be set again
     precursor_ = std::coroutine_handle<>();
     return result;
   }
 
  private:
-  std::optional<T> value_;
-  bool detached_ = false;
   std::coroutine_handle<> precursor_;
+  bool detached_ = false;
 };
 
 }

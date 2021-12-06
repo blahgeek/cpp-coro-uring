@@ -1,30 +1,42 @@
 #pragma once
 
 #include <optional>
+#include <type_traits>
 
 #include "coro_uring/coroutines_compat.h"
 #include "coro_uring/promise.h"
 #include "coro_uring/debug.h"
 
 namespace coro_uring {
+namespace internal {
 
-template <typename T>
-class Future {
+template <typename ValueT, typename ReturnObjectT>
+class FuturePromise
+    : public PromiseBase<ValueT, ReturnObjectT, std::suspend_never> {
  public:
-  class Promise : public PromiseBase<T, Future<T>, std::suspend_never> {
-   public:
-    void return_value(T value) {
-      TRACE_FUNCTION() << value;
-      this->SetValue(std::move(value));
-    }
-  };
+  template <typename Arg>
+  void return_value(Arg value) {
+    TRACE_FUNCTION() << value;
+    this->SetValue(std::forward<Arg>(value));
+  }
+};
 
-  using promise_type = Promise;
+template <typename ReturnObjectT>
+class FuturePromise<void, ReturnObjectT>
+    : public PromiseBase<void, ReturnObjectT, std::suspend_never> {
+ public:
+  void return_void() { TRACE_FUNCTION(); }
+};
 
-  explicit Future(std::coroutine_handle<promise_type> handle)
+template <typename ValueT, typename FutureT>
+class FutureBase {
+ public:
+  using promise_type = FuturePromise<ValueT, FutureT>;
+
+  explicit FutureBase(std::coroutine_handle<promise_type> handle)
       : handle_(handle) {}
 
-  ~Future() {
+  ~FutureBase() {
     TRACE_FUNCTION();
     if (handle_) {
       handle_.destroy();
@@ -33,13 +45,6 @@ class Future {
 
   bool await_ready() noexcept {
     return handle_.done();
-  }
-
-  T await_resume() noexcept {
-    TRACE_FUNCTION();
-    std::optional<T> value = handle_.promise().PopValue();
-    DCHECK(value.has_value());
-    return std::move(*value);
   }
 
   void await_suspend(std::coroutine_handle<> handle) {
@@ -52,8 +57,29 @@ class Future {
     handle_ = std::coroutine_handle<promise_type>();
   }
 
- private:
+ protected:
   std::coroutine_handle<promise_type> handle_;
+};
+
+}
+
+template <typename T = void>
+class Future : public internal::FutureBase<T, Future<T>> {
+ public:
+  using internal::FutureBase<T, Future<T>>::FutureBase;
+  T&& await_resume() noexcept {
+    TRACE_FUNCTION();
+    std::optional<T>&& value = this->handle_.promise().GetValue();
+    DCHECK(value.has_value());
+    return std::move(*value);
+  }
+};
+
+template <>
+class Future<void> : public internal::FutureBase<void, Future<void>> {
+ public:
+  using internal::FutureBase<void, Future<void>>::FutureBase;
+  void await_resume() noexcept {}
 };
 
 }

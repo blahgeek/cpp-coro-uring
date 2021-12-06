@@ -59,9 +59,8 @@ Future<int> run(IOService& ioservice) {
   co_return 0;
 }
 
-Future<int> run2(IOService& ioservice) {
+Future<> run2(IOService& ioservice) {
   co_await run(ioservice);
-  co_return 0;
 }
 
 }
