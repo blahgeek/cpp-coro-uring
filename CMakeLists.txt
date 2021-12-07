@@ -13,15 +13,16 @@ elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 endif()
 
 # cannot use system-installed glog, because we need link with libc++ for clang
+set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 set(WITH_GTEST OFF)
 set(WITH_GFLAGS OFF)
 set(BUILD_TESTING OFF)
 add_subdirectory(glog)
 
-find_library(LIBURING_LIBRARY uring REQUIRED)
-find_path(LIBURING_INCLUDE_DIR NAMES liburing.h)
-include_directories(${LIBURING_INCLUDE_DIR})
-link_libraries(${LIBURING_LIBRARY})
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(LIBURING REQUIRED liburing>=2.0)
+include_directories(${LIBURING_INCLUDE_DIRS})
+link_libraries(${LIBURING_LIBRARIES})
 
 include_directories(./src)
 
