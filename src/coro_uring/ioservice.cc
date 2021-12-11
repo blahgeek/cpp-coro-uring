@@ -1,5 +1,6 @@
 #include "coro_uring/ioservice.h"
 
+#include <chrono>
 #include <memory>
 
 #include <glog/logging.h>
@@ -38,8 +39,14 @@ struct Awaitable {
 
 }
 
-IOService::IOService(const IOService::Options& options) {
-  PCHECK(io_uring_queue_init(options.queue_size, &ring_, 0) == 0);
+IOService::IOService(const IOService::Options& options): options_(options) {
+  struct io_uring_params params;
+  memset(&params, 0, sizeof(params));
+  PCHECK(io_uring_queue_init_params(options_.queue_size, &ring_, &params) == 0);
+
+  LOG_IF(ERROR, !(params.features & IORING_FEAT_NODROP))
+      << "NODROP feature is not supported by kernel, this class may not work "
+         "properly when events overflow";
 }
 
 IOService::~IOService() {
@@ -49,9 +56,11 @@ IOService::~IOService() {
 Future<int32_t> IOService::ExecuteInternal(struct io_uring_sqe* sqe) {
   Awaitable awaitable;
   io_uring_sqe_set_data(sqe, &awaitable);
-  io_uring_submit(&ring_);  // TODO: maybe add an option to not submit it
+
   pending_count_ += 1;
-  TRACE_FUNCTION() << "Submit";
+  if (!earliest_queued_sqe_ts_.has_value()) {
+    earliest_queued_sqe_ts_ = std::chrono::steady_clock::now();
+  }
 
   co_return (co_await awaitable);
 }
@@ -59,17 +68,46 @@ Future<int32_t> IOService::ExecuteInternal(struct io_uring_sqe* sqe) {
 void IOService::RunUntilFinish() {
   while (pending_count_ > 0) {
     struct io_uring_cqe* cqe = nullptr;
-    PCHECK(io_uring_wait_cqe(&ring_, &cqe) == 0);
-
-    TRACE_FUNCTION() << cqe->res;
-    Awaitable* awaitable = static_cast<Awaitable*>(io_uring_cqe_get_data(cqe));
-    awaitable->result_ = cqe->res;
-    io_uring_cqe_seen(&ring_, cqe);
-    pending_count_ -= 1;
-
-    if (awaitable->precursor_) {
-      awaitable->precursor_();
+    if (io_uring_sq_ready(&ring_) > 0) {
+      PCHECK(io_uring_submit_and_wait(&ring_, 1) > 0);
+      earliest_queued_sqe_ts_.reset();
+    } else {
+      PCHECK(io_uring_wait_cqe(&ring_, &cqe) == 0);
     }
+
+    DCHECK_EQ(io_uring_sq_ready(&ring_), 0);
+
+    int cq_head = 0;
+    int cq_count = 0;
+    io_uring_for_each_cqe(&ring_, cq_head, cqe) {
+      Awaitable* awaitable = static_cast<Awaitable*>(io_uring_cqe_get_data(cqe));
+      DCHECK_NOTNULL(awaitable);
+      awaitable->result_ = cqe->res;
+      if (awaitable->precursor_) {
+        awaitable->precursor_();
+      }
+
+      pending_count_ -= 1;
+      cq_count += 1;
+
+      int sq_current_count = io_uring_sq_ready(&ring_);
+      if (sq_current_count >= options_.sq_submit_count_threshold ||
+          sq_current_count >= *ring_.sq.kring_entries) {
+        break;
+      }
+
+      if (earliest_queued_sqe_ts_.has_value()) {
+        auto elapsed =
+            std::chrono::steady_clock::now() - earliest_queued_sqe_ts_.value();
+        int64_t elapsed_us =
+            std::chrono::duration_cast<std::chrono::microseconds>(elapsed)
+                .count();
+        if (elapsed_us > options_.sq_submit_delay_threshold_us) {
+          break;
+        }
+      }
+    }
+    io_uring_cq_advance(&ring_, cq_count);
   }
 }
 
