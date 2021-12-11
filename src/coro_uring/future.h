@@ -5,7 +5,6 @@
 
 #include "coro_uring/coroutines_compat.h"
 #include "coro_uring/promise.h"
-#include "coro_uring/debug.h"
 
 namespace coro_uring {
 namespace internal {
@@ -16,7 +15,6 @@ class FuturePromise
  public:
   template <typename Arg>
   void return_value(Arg value) {
-    TRACE_FUNCTION() << value;
     this->SetValue(std::forward<Arg>(value));
   }
 };
@@ -25,7 +23,7 @@ template <typename ReturnObjectT>
 class FuturePromise<void, ReturnObjectT>
     : public PromiseBase<void, ReturnObjectT, std::suspend_never> {
  public:
-  void return_void() { TRACE_FUNCTION(); }
+  constexpr void return_void() {}
 };
 
 template <typename ValueT, typename FutureT>
@@ -37,7 +35,6 @@ class FutureBase {
       : handle_(handle) {}
 
   ~FutureBase() {
-    TRACE_FUNCTION();
     if (handle_) {
       handle_.destroy();
     }
@@ -48,7 +45,6 @@ class FutureBase {
   }
 
   void await_suspend(std::coroutine_handle<> handle) {
-    TRACE_FUNCTION();
     handle_.promise().SetPrecursor(handle);
   }
 
@@ -68,7 +64,6 @@ class Future : public internal::FutureBase<T, Future<T>> {
  public:
   using internal::FutureBase<T, Future<T>>::FutureBase;
   T&& await_resume() noexcept {
-    TRACE_FUNCTION();
     std::optional<T>&& value = this->handle_.promise().GetValue();
     DCHECK(value.has_value());
     return std::move(*value);
@@ -79,7 +74,7 @@ template <>
 class Future<void> : public internal::FutureBase<void, Future<void>> {
  public:
   using internal::FutureBase<void, Future<void>>::FutureBase;
-  void await_resume() noexcept {}
+  constexpr void await_resume() noexcept {}
 };
 
 }

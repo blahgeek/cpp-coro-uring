@@ -20,7 +20,6 @@ class IOService {
 
       IOService* ioservice_;
     };
-    TRACE_FUNCTION();
     return awaitable{.ioservice_ = this};
   }
 
@@ -36,13 +35,11 @@ class IOService {
 };
 
 Generator<int> range(IOService& ioservice, int n) {
-  TRACE_FUNCTION();
   for (int i = 0 ; i < n ; i ++) {
     std::cout << "YIELD " << i << std::endl;
     co_await ioservice.SchedYield();
     co_yield i;
   }
-  TRACE_FUNCTION();
 }
 
 Future<int> run(IOService& ioservice) {
@@ -55,7 +52,6 @@ Future<int> run(IOService& ioservice) {
       break;
     }
   }
-  TRACE_FUNCTION();
   co_return 0;
 }
 

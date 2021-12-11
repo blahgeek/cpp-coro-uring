@@ -7,7 +7,6 @@
 #include <liburing.h>
 #include <liburing/io_uring.h>
 
-#include "coro_uring/debug.h"
 #include "coro_uring/future.h"
 
 namespace coro_uring {
@@ -81,7 +80,7 @@ void IOService::RunUntilFinish() {
     int cq_count = 0;
     io_uring_for_each_cqe(&ring_, cq_head, cqe) {
       Awaitable* awaitable = static_cast<Awaitable*>(io_uring_cqe_get_data(cqe));
-      DCHECK_NOTNULL(awaitable);
+      DCHECK(awaitable);
       awaitable->result_ = cqe->res;
       if (awaitable->precursor_) {
         awaitable->precursor_();

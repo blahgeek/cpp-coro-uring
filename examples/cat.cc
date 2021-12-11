@@ -10,7 +10,6 @@
 #include <liburing.h>
 
 #include "coro_uring/future.h"
-#include "coro_uring/debug.h"
 #include "coro_uring/ioservice.h"
 
 namespace {
@@ -24,12 +23,10 @@ coro_uring::Future<int> Cat(coro_uring::IOService& ioservice,
   char buffer[kBufferSize];
 
   for (int64_t offset = 0 ; ; offset += kBufferSize) {
-    TRACE_FUNCTION() << offset;
     int32_t read_result =
         co_await ioservice.Execute([&](struct io_uring_sqe* sqe) {
           io_uring_prep_read(sqe, fd, buffer, kBufferSize, offset);
         });
-    TRACE_FUNCTION() << read_result;
     if (read_result <= 0) {
       break;
     }

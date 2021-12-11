@@ -5,7 +5,6 @@
 #include <glog/logging.h>
 
 #include "coro_uring/coroutines_compat.h"
-#include "coro_uring/debug.h"
 
 namespace coro_uring::internal {
 
@@ -20,25 +19,21 @@ struct PromiseBaseValueHolder<void> {};
 template <typename ValueT, typename ReturnObjectT, typename InitialSuspendT>
 class PromiseBase : private PromiseBaseValueHolder<ValueT> {
  public:
-  auto initial_suspend() noexcept {
-    TRACE_FUNCTION();
+  constexpr auto initial_suspend() noexcept {
     return InitialSuspendT();
   }
 
   auto final_suspend() noexcept {
-    TRACE_FUNCTION();
     return GetPrecursorAwaitable();
   }
 
   ReturnObjectT get_return_object() {
-    TRACE_FUNCTION();
     using promise_t = typename ReturnObjectT::promise_type;
     return ReturnObjectT(std::coroutine_handle<promise_t>::from_promise(
         *static_cast<promise_t*>(this)));
   }
 
   void unhandled_exception() {
-    TRACE_FUNCTION();
     throw;
   }
 
@@ -69,7 +64,6 @@ class PromiseBase : private PromiseBaseValueHolder<ValueT> {
       bool await_ready() noexcept { return false; }
       void await_resume() noexcept {}
       std::coroutine_handle<> await_suspend(std::coroutine_handle<> h) noexcept {
-        TRACE_FUNCTION();
         if (detached) {
           DCHECK(!precursor) << "Detached promise cannot have precursor";
           h.destroy();

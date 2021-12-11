@@ -4,7 +4,6 @@
 
 #include "coro_uring/coroutines_compat.h"
 #include "coro_uring/promise.h"
-#include "coro_uring/debug.h"
 
 namespace coro_uring {
 
@@ -14,13 +13,10 @@ class Generator {
   class Promise
       : public internal::PromiseBase<T, Generator<T>, std::suspend_always> {
    public:
-    void return_void() {
-      TRACE_FUNCTION();
-    }
+    constexpr void return_void() {}
 
     template <typename Arg>
     auto yield_value(Arg value) {
-      TRACE_FUNCTION() << value;
       this->SetValue(std::forward<Arg>(value));
       return this->GetPrecursorAwaitable();
     }
@@ -32,7 +28,6 @@ class Generator {
       : handle_(handle) {}
 
   ~Generator() {
-    TRACE_FUNCTION();
     if (handle_) {
       handle_.destroy();
     }
@@ -43,7 +38,6 @@ class Generator {
   }
 
   std::optional<T>&& await_resume() noexcept {
-    TRACE_FUNCTION();
     if (handle_.done()) {
       static std::optional<T> nullval;
       nullval.reset();
@@ -53,7 +47,6 @@ class Generator {
   }
 
   std::coroutine_handle<> await_suspend(std::coroutine_handle<> handle) {
-    TRACE_FUNCTION();
     handle_.promise().SetPrecursor(handle);
     DCHECK(!handle_.done());
     return handle_;  // run myself
